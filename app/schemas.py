@@ -3,6 +3,13 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
 
+# A 1x1 transparent PNG, so the generated docs stay readable.
+_EXAMPLE_PHOTO = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
+    "FcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
 class ContactBase(BaseModel):
     """Fields shared by every contact request and response."""
 
@@ -69,6 +76,15 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+    photo: str | None = Field(
+        default=None,
+        description=(
+            "Contact photo as a base64 data URL, e.g. `data:image/png;base64,...`. "
+            "Stored verbatim and returned as-is, so a client can put it straight "
+            "into an `<img src>`."
+        ),
+        examples=[_EXAMPLE_PHOTO],
+    )
 
 
 _FULL_EXAMPLE = {
@@ -84,6 +100,7 @@ _FULL_EXAMPLE = {
     "postal_code": "94105",
     "country": "USA",
     "notes": "Met at the SF hackathon.",
+    "photo": _EXAMPLE_PHOTO,
 }
 _MINIMAL_EXAMPLE = {"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"}
 
@@ -134,6 +151,10 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    photo: str | None = Field(
+        default=None,
+        description="New photo as a base64 data URL. Send `null` to remove the current one.",
+    )
 
 
 class ContactRead(ContactBase):

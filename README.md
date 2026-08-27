@@ -108,8 +108,13 @@ also read):
 
 ```
 first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes
+address, city, state, postal_code, country, notes, photo
 ```
+
+`photo` is a base64 data URL (`data:image/png;base64,...`) stored verbatim, so a
+client can put it straight into an `<img src>` — no blob store or file route.
+Remember that `PUT` is a full replace: omit `photo` and the stored photo is
+cleared, so resend it (or use `PATCH`) when you only mean to change other fields.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
 

@@ -1,4 +1,8 @@
 BASE = "/api/v1/contacts"
+PHOTO = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
+    "FcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
 
 
 def test_health(client):
@@ -132,6 +136,46 @@ def test_put_missing_contact_returns_404(client):
         json={"first_name": "A", "last_name": "B", "email": "ab@example.com"},
     )
     assert response.status_code == 404
+
+
+def test_photo_round_trips_through_create_and_get(client, payload):
+    created = client.post(BASE, json={**payload, "photo": PHOTO})
+    assert created.status_code == 201
+    assert created.json()["photo"] == PHOTO
+
+    fetched = client.get(f"{BASE}/{created.json()['id']}")
+    assert fetched.json()["photo"] == PHOTO
+
+
+def test_photo_defaults_to_null(client, payload):
+    assert client.post(BASE, json=payload).json()["photo"] is None
+
+
+def test_patch_leaves_photo_alone(client, payload):
+    contact_id = client.post(BASE, json={**payload, "photo": PHOTO}).json()["id"]
+    response = client.patch(f"{BASE}/{contact_id}", json={"job_title": "Countess"})
+    assert response.json()["photo"] == PHOTO
+
+
+def test_patch_can_clear_photo(client, payload):
+    contact_id = client.post(BASE, json={**payload, "photo": PHOTO}).json()["id"]
+    response = client.patch(f"{BASE}/{contact_id}", json={"photo": None})
+    assert response.json()["photo"] is None
+
+
+def test_put_clears_an_omitted_photo(client, payload):
+    """PUT is a full replace: a client that drops `photo` loses the photo.
+
+    The web form guards against this by resubmitting the current photo; this
+    test pins the API contract that makes that necessary.
+    """
+    contact_id = client.post(BASE, json={**payload, "photo": PHOTO}).json()["id"]
+
+    replaced = client.put(f"{BASE}/{contact_id}", json=payload)
+    assert replaced.json()["photo"] is None
+
+    kept = client.put(f"{BASE}/{contact_id}", json={**payload, "photo": PHOTO})
+    assert kept.json()["photo"] == PHOTO
 
 
 def test_delete_contact(client, payload):
