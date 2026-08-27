@@ -163,6 +163,22 @@ def test_patch_can_clear_photo(client, payload):
     assert response.json()["photo"] is None
 
 
+def test_photo_must_be_an_image_data_url(client, payload):
+    for bad in ["hello", "https://example.com/ada.png", "data:text/html;base64,PHNjcmlwdD4="]:
+        response = client.post(BASE, json={**payload, "photo": bad})
+        assert response.status_code == 422, bad
+
+
+def test_photo_has_a_size_ceiling(client, payload):
+    oversized = "data:image/png;base64," + "A" * 2_800_001
+    assert client.post(BASE, json={**payload, "photo": oversized}).status_code == 422
+
+
+def test_patch_validates_the_photo_too(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    assert client.patch(f"{BASE}/{contact_id}", json={"photo": "nope"}).status_code == 422
+
+
 def test_put_clears_an_omitted_photo(client, payload):
     """PUT is a full replace: a client that drops `photo` loses the photo.
 

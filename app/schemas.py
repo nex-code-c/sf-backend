@@ -1,6 +1,32 @@
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+
+# Formats a browser can render from a data URL, and that the web client sends.
+_PHOTO_DATA_URL = re.compile(r"^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$")
+
+# Base64 inflates by ~4/3, so this caps the decoded image at roughly 2 MB.
+MAX_PHOTO_LENGTH = 2_800_000
+
+
+def validate_photo(value: str | None) -> str | None:
+    """Reject anything that is not a base64 data URL for a supported image.
+
+    `photo` is echoed straight back into an `<img src>`, so the accepted shape
+    is pinned here rather than trusting whatever a client sends.
+    """
+    if value is None:
+        return None
+    if len(value) > MAX_PHOTO_LENGTH:
+        raise ValueError("photo must be 2 MB or smaller once decoded")
+    if not _PHOTO_DATA_URL.match(value):
+        raise ValueError(
+            "photo must be a base64 data URL for a PNG, JPEG, GIF, or WebP image, "
+            "e.g. data:image/png;base64,..."
+        )
+    return value
 
 
 # A 1x1 transparent PNG, so the generated docs stay readable.
@@ -86,6 +112,8 @@ class ContactBase(BaseModel):
         examples=[_EXAMPLE_PHOTO],
     )
 
+    _check_photo = field_validator("photo")(validate_photo)
+
 
 _FULL_EXAMPLE = {
     "first_name": "Ada",
@@ -155,6 +183,8 @@ class ContactUpdate(BaseModel):
         default=None,
         description="New photo as a base64 data URL. Send `null` to remove the current one.",
     )
+
+    _check_photo = field_validator("photo")(validate_photo)
 
 
 class ContactRead(ContactBase):

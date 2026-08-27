@@ -66,6 +66,13 @@ SQLite database normally dies with the connection that opened it, so `app/databa
 uses SQLAlchemy's `StaticPool` to hold one connection open for the process's lifetime.
 Every request — including ones FastAPI runs on a worker thread — sees the same data.
 
+Startup calls `create_all`, which **creates missing tables but never alters
+existing ones**. That is invisible on the default in-memory database, which is
+built fresh every start, but if you have pointed `CONTACTS_DATABASE_URL` at a
+file created by an older version, a column added since — like `photo` — will not
+appear and queries against it will fail. There is no migration tool wired up:
+delete the file and let it rebuild, or add the column by hand.
+
 **Data is lost when the process exits.** Because of that, three sample contacts are
 seeded on startup so the API is never empty. To persist instead, point at a file:
 
@@ -111,8 +118,9 @@ first_name, last_name, email, phone, company, job_title,
 address, city, state, postal_code, country, notes, photo
 ```
 
-`photo` is a base64 data URL (`data:image/png;base64,...`) stored verbatim, so a
-client can put it straight into an `<img src>` — no blob store or file route.
+`photo` is a base64 data URL (`data:image/png;base64,...`), so a client can put
+it straight into an `<img src>` — no blob store or file route. It must be a PNG,
+JPEG, GIF, or WebP and 2 MB or smaller once decoded; anything else is a `422`.
 Remember that `PUT` is a full replace: omit `photo` and the stored photo is
 cleared, so resend it (or use `PATCH`) when you only mean to change other fields.
 
