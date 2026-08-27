@@ -42,7 +42,7 @@ def test_info_block_is_populated(spec):
 
 def test_tags_have_descriptions(spec):
     tags = {tag["name"]: tag.get("description", "") for tag in spec["tags"]}
-    assert set(tags) == {"contacts", "meta"}
+    assert set(tags) == {"contacts", "addresses", "meta"}
     assert all(len(description) > 20 for description in tags.values())
 
 
@@ -68,6 +68,11 @@ def test_operation_ids_are_stable_and_unique(spec):
         "replaceContact",
         "updateContact",
         "deleteContact",
+        "listContactAddresses",
+        "addContactAddress",
+        "getContactAddress",
+        "replaceContactAddress",
+        "deleteContactAddress",
         "healthCheck",
         "getRoot",
     }

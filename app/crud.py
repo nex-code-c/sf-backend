@@ -1,8 +1,14 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Contact
-from app.schemas import ContactCreate, ContactReplace, ContactUpdate
+from app.models import Address, Contact
+from app.schemas import (
+    AddressCreate,
+    AddressReplace,
+    ContactCreate,
+    ContactReplace,
+    ContactUpdate,
+)
 
 SORTABLE_FIELDS = ("id", "first_name", "last_name", "email", "company", "created_at", "updated_at")
 
@@ -59,10 +65,20 @@ def list_contacts(
     return list(items), total
 
 
+def _set_addresses(contact: Contact, addresses: list[AddressCreate]) -> None:
+    """Replace a contact's addresses wholesale.
+
+    `delete-orphan` on the relationship means dropping a row from the list
+    deletes it, so the collection assignment is the whole operation.
+    """
+    contact.addresses = [Address(**address.model_dump()) for address in addresses]
+
+
 def create_contact(db: Session, payload: ContactCreate) -> Contact:
-    data = payload.model_dump()
+    data = payload.model_dump(exclude={"addresses"})
     data["email"] = _normalize_email(data["email"])
     contact = Contact(**data)
+    _set_addresses(contact, payload.addresses)
     db.add(contact)
     db.commit()
     db.refresh(contact)
@@ -70,16 +86,21 @@ def create_contact(db: Session, payload: ContactCreate) -> Contact:
 
 
 def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> Contact:
-    for field, value in payload.model_dump().items():
+    for field, value in payload.model_dump(exclude={"addresses"}).items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
+    _set_addresses(contact, payload.addresses)
     db.commit()
     db.refresh(contact)
     return contact
 
 
 def update_contact(db: Session, contact: Contact, payload: ContactUpdate) -> Contact:
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True, exclude={"addresses"})
+    for field, value in data.items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
+    # Only touch the addresses when the caller actually sent the key.
+    if payload.addresses is not None:
+        _set_addresses(contact, payload.addresses)
     db.commit()
     db.refresh(contact)
     return contact
@@ -87,4 +108,35 @@ def update_contact(db: Session, contact: Contact, payload: ContactUpdate) -> Con
 
 def delete_contact(db: Session, contact: Contact) -> None:
     db.delete(contact)
+    db.commit()
+
+
+# ------------------------------------------------------------------ #
+# Addresses — always reached through the contact that owns them       #
+# ------------------------------------------------------------------ #
+
+
+def get_address(db: Session, contact_id: int, address_id: int) -> Address | None:
+    stmt = select(Address).where(Address.id == address_id, Address.contact_id == contact_id)
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def add_address(db: Session, contact: Contact, payload: AddressCreate) -> Address:
+    address = Address(contact_id=contact.id, **payload.model_dump())
+    db.add(address)
+    db.commit()
+    db.refresh(address)
+    return address
+
+
+def replace_address(db: Session, address: Address, payload: AddressReplace) -> Address:
+    for field, value in payload.model_dump().items():
+        setattr(address, field, value)
+    db.commit()
+    db.refresh(address)
+    return address
+
+
+def delete_address(db: Session, address: Address) -> None:
+    db.delete(address)
     db.commit()

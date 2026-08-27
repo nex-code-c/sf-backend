@@ -107,6 +107,11 @@ also read):
 | `PUT` | `/api/v1/contacts/{id}` | Full replace (omitted fields are cleared) |
 | `PATCH` | `/api/v1/contacts/{id}` | Partial update (only sent fields change) |
 | `DELETE` | `/api/v1/contacts/{id}` | Delete → `204` |
+| `GET` | `/api/v1/contacts/{id}/addresses` | List a contact's addresses |
+| `POST` | `/api/v1/contacts/{id}/addresses` | Add one → `201` |
+| `GET` | `/api/v1/contacts/{id}/addresses/{address_id}` | Fetch one address |
+| `PUT` | `/api/v1/contacts/{id}/addresses/{address_id}` | Full replace |
+| `DELETE` | `/api/v1/contacts/{id}/addresses/{address_id}` | Delete → `204` |
 
 ### Contact fields
 
@@ -114,8 +119,7 @@ also read):
 (case-insensitive). Everything else is optional.
 
 ```
-first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes, photo
+first_name, last_name, email, phone, company, job_title, notes, photo
 ```
 
 `photo` is a base64 data URL (`data:image/png;base64,...`), so a client can put
@@ -125,6 +129,35 @@ Remember that `PUT` is a full replace: omit `photo` and the stored photo is
 cleared, so resend it (or use `PATCH`) when you only mean to change other fields.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
+
+### Addresses
+
+A contact has **many** addresses, each a row in its own `addresses` table with a
+foreign key back to `contacts` and its own `type` — `Home`, `Work`, or `Other`.
+Anything else is a `422`. There are no `address2`/`address3` columns and no JSON
+blob: adding a fourth address is a row, not a schema change.
+
+```
+type, street, city, state, postal_code, country
+```
+
+They are always returned nested under their contact:
+
+```json
+{ "id": 1, "full_name": "Ada Lovelace",
+  "addresses": [ { "id": 1, "type": "Work", "city": "San Francisco", ... } ] }
+```
+
+Two ways to write them, and they are for different jobs:
+
+* **Nested on the contact.** `POST` and `PUT` take an `addresses` array and
+  replace the whole set, so the edit form can submit the contact and its
+  addresses in one request. `PATCH` leaves them alone unless you send the key.
+* **The nested routes.** `/contacts/{id}/addresses` gives you per-address create,
+  read, replace, and delete when you want to change one without resending the rest.
+
+Deleting a contact deletes its addresses (`ON DELETE CASCADE`, plus
+`delete-orphan` on the relationship, so it holds on SQLite and Postgres alike).
 
 ### List query parameters
 

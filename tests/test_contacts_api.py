@@ -3,6 +3,8 @@ PHOTO = (
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
     "FcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
+HOME = {"type": "Home", "street": "12 Ockham Rd", "city": "London", "country": "UK"}
+WORK = {"type": "Work", "street": "1 Market St", "city": "San Francisco", "state": "CA"}
 
 
 def test_health(client):
@@ -192,6 +194,94 @@ def test_put_clears_an_omitted_photo(client, payload):
 
     kept = client.put(f"{BASE}/{contact_id}", json={**payload, "photo": PHOTO})
     assert kept.json()["photo"] == PHOTO
+
+
+def test_create_contact_with_addresses(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": [HOME, WORK]})
+    assert response.status_code == 201
+
+    addresses = response.json()["addresses"]
+    assert [address["type"] for address in addresses] == ["Home", "Work"]
+    assert addresses[0]["street"] == "12 Ockham Rd"
+    assert all(address["id"] > 0 for address in addresses)
+
+
+def test_addresses_default_to_empty(client, payload):
+    assert client.post(BASE, json=payload).json()["addresses"] == []
+
+
+def test_address_type_is_constrained(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": [{**HOME, "type": "Beach"}]})
+    assert response.status_code == 422
+
+
+def test_address_type_defaults_to_home(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": [{"city": "London"}]})
+    assert response.json()["addresses"][0]["type"] == "Home"
+
+
+def test_addresses_nest_under_the_contact_everywhere(client, payload):
+    contact_id = client.post(BASE, json={**payload, "addresses": [HOME]}).json()["id"]
+
+    assert client.get(f"{BASE}/{contact_id}").json()["addresses"][0]["city"] == "London"
+    listed = client.get(BASE).json()["items"][0]
+    assert listed["addresses"][0]["city"] == "London"
+
+
+def test_put_replaces_the_whole_address_set(client, payload):
+    contact_id = client.post(BASE, json={**payload, "addresses": [HOME]}).json()["id"]
+
+    replaced = client.put(f"{BASE}/{contact_id}", json={**payload, "addresses": [WORK]})
+    assert [address["type"] for address in replaced.json()["addresses"]] == ["Work"]
+
+    cleared = client.put(f"{BASE}/{contact_id}", json=payload)
+    assert cleared.json()["addresses"] == []
+
+
+def test_patch_leaves_addresses_alone_unless_sent(client, payload):
+    contact_id = client.post(BASE, json={**payload, "addresses": [HOME]}).json()["id"]
+
+    untouched = client.patch(f"{BASE}/{contact_id}", json={"job_title": "Countess"})
+    assert len(untouched.json()["addresses"]) == 1
+
+    emptied = client.patch(f"{BASE}/{contact_id}", json={"addresses": []})
+    assert emptied.json()["addresses"] == []
+
+
+def test_address_crud_through_the_nested_routes(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    addresses_url = f"{BASE}/{contact_id}/addresses"
+
+    created = client.post(addresses_url, json=HOME)
+    assert created.status_code == 201
+    address_id = created.json()["id"]
+
+    assert client.get(addresses_url).json()[0]["id"] == address_id
+    assert client.get(f"{addresses_url}/{address_id}").json()["street"] == "12 Ockham Rd"
+
+    updated = client.put(f"{addresses_url}/{address_id}", json=WORK)
+    assert updated.json()["type"] == "Work"
+    assert updated.json()["city"] == "San Francisco"
+
+    assert client.delete(f"{addresses_url}/{address_id}").status_code == 204
+    assert client.get(addresses_url).json() == []
+
+
+def test_address_routes_404_on_a_foreign_address(client, payload):
+    mine = client.post(BASE, json=payload).json()["id"]
+    theirs = client.post(BASE, json={**payload, "email": "grace@example.com"}).json()["id"]
+    address_id = client.post(f"{BASE}/{mine}/addresses", json=HOME).json()["id"]
+
+    # The address exists, but not on that contact.
+    assert client.get(f"{BASE}/{theirs}/addresses/{address_id}").status_code == 404
+    assert client.delete(f"{BASE}/{theirs}/addresses/{address_id}").status_code == 404
+    assert client.get(f"{BASE}/9999/addresses").status_code == 404
+
+
+def test_deleting_a_contact_takes_its_addresses(client, payload):
+    contact_id = client.post(BASE, json={**payload, "addresses": [HOME, WORK]}).json()["id"]
+    assert client.delete(f"{BASE}/{contact_id}").status_code == 204
+    assert client.get(f"{BASE}/{contact_id}/addresses").status_code == 404
 
 
 def test_delete_contact(client, payload):
