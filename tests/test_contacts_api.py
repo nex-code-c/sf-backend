@@ -1,3 +1,7 @@
+import base64
+
+from app.schemas import MAX_PHOTO_BYTES, MAX_PHOTO_LENGTH
+
 BASE = "/api/v1/contacts"
 PHOTO = (
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
@@ -171,9 +175,28 @@ def test_photo_must_be_an_image_data_url(client, payload):
         assert response.status_code == 422, bad
 
 
+def test_photo_must_be_decodable_base64(client, payload):
+    """Looking like base64 is not enough -- these all decode to nothing valid."""
+    for bad in ["data:image/png;base64,A", "data:image/png;base64,AAAAA"]:
+        response = client.post(BASE, json={**payload, "photo": bad})
+        assert response.status_code == 422, bad
+
+
 def test_photo_has_a_size_ceiling(client, payload):
-    oversized = "data:image/png;base64," + "A" * 2_800_001
+    oversized = "data:image/png;base64," + "A" * MAX_PHOTO_LENGTH
     assert client.post(BASE, json={**payload, "photo": oversized}).status_code == 422
+
+
+def test_photo_ceiling_is_measured_on_the_decoded_bytes(client, payload):
+    """A string inside the character cap can still decode past the byte cap."""
+    prefix = "data:image/jpeg;base64,"
+    photo = prefix + "A" * (MAX_PHOTO_LENGTH - len(prefix))
+
+    # Short enough to clear the cheap length check, so only decoding catches it.
+    assert len(photo) <= MAX_PHOTO_LENGTH
+    assert len(base64.b64decode(photo.removeprefix(prefix))) > MAX_PHOTO_BYTES
+
+    assert client.post(BASE, json={**payload, "photo": photo}).status_code == 422
 
 
 def test_patch_validates_the_photo_too(client, payload):

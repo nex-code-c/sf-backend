@@ -1,3 +1,5 @@
+import base64
+import binascii
 import re
 from datetime import datetime, timezone
 
@@ -71,27 +73,44 @@ class AddressRead(AddressBase):
 
 
 # Formats a browser can render from a data URL, and that the web client sends.
-_PHOTO_DATA_URL = re.compile(r"^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$")
+_PHOTO_DATA_URL = re.compile(r"^data:image/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$")
 
-# Base64 inflates by ~4/3, so this caps the decoded image at roughly 2 MB.
-MAX_PHOTO_LENGTH = 2_800_000
+# The ceiling that actually matters: how big the image is once decoded.
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
+
+# Base64 inflates by 4/3 and pads to a multiple of 4, so nothing within the byte
+# ceiling can be longer than this. Checked first, to bound the work of decoding.
+MAX_PHOTO_LENGTH = len("data:image/jpeg;base64,") + (MAX_PHOTO_BYTES + 2) // 3 * 4
 
 
 def validate_photo(value: str | None) -> str | None:
     """Reject anything that is not a base64 data URL for a supported image.
 
     `photo` is echoed straight back into an `<img src>`, so the accepted shape
-    is pinned here rather than trusting whatever a client sends.
+    is pinned here rather than trusting whatever a client sends. The payload is
+    decoded rather than only pattern-matched: a string can look like base64
+    without being decodable, and only the decoded length can be measured
+    against the 2 MB limit the field documents.
     """
     if value is None:
         return None
     if len(value) > MAX_PHOTO_LENGTH:
         raise ValueError("photo must be 2 MB or smaller once decoded")
-    if not _PHOTO_DATA_URL.match(value):
+
+    match = _PHOTO_DATA_URL.match(value)
+    if not match:
         raise ValueError(
             "photo must be a base64 data URL for a PNG, JPEG, GIF, or WebP image, "
             "e.g. data:image/png;base64,..."
         )
+
+    try:
+        decoded = base64.b64decode(match.group(2), validate=True)
+    except binascii.Error:
+        raise ValueError("photo is not valid base64") from None
+
+    if len(decoded) > MAX_PHOTO_BYTES:
+        raise ValueError("photo must be 2 MB or smaller once decoded")
     return value
 
 
